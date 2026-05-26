@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+
+        <link rel="stylesheet" href="midas.css">
+
+        <style>
+            .popup {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.4);
+            }
+
+            .popup-content {
+                background: white;
+                margin: 10% auto;
+                padding: 20px;
+                width: 400px;
+                border-radius: 6px;
+            }
+
+            .close {
+                float: right;
+                font-size: 24px;
+                cursor: pointer;
+            }
+
+            #histogramTree {
+                max-height: 50vh;
+                overflow-y: auto;
+                margin-top: 10px;
+            }
+        </style>
+
+        <script src="controls.js"></script>
+        <script src="midas.js"></script>
+        <script src="mhttpd.js"></script>
+        <script src="mplot.js"></script>
+        <script src="dqm/onlineDQM.js?v=dev2"></script>
+        <script src="dqm/onlineDQMgeneric.js?v=dev19"></script>
+
+        <title>Online Display</title>
+    </head>
+
+    <body class="mcss" onload="pageInit();">
+         <div id="histogramPopup" class="popup">
+            <div class="popup-content">
+                <span class="close" onclick="closeHistogramPopup()">&times;</span>
+                <h3>Select Histogram</h3>
+                <div id="histogramTree"></div>
+            </div>
+        </div>
+        <!-- These will be filled by mhttpd_start -->
+        <div id="mheader"></div>
+        <div id="msidenav"></div>
+
+        <div id="mmain">
+            <div>
+                Run number (0 for current run): <input type=text id='runNumbers' value='0' onchange='onChangeRun()'/>
+                <select id='dqmProg' onchange='onDQMProgChanged()'>
+                    <option value="ana">Online</option>
+                    <option value="prompt_server">Prompt</option>
+                </select>
+                <br/>
+                <button onclick="openHistogramPopup()">Select Histogram</button>
+                <select id="layoutSelector" onchange="onLayoutSelected()">
+                    <option value="">Choose layout...</option>
+                </select>
+
+                <input type="text" id="layoutName" placeholder="Layout name"/>
+
+                <button onclick="saveCurrentLayout()">Save layout</button>
+                <button onclick="deleteSelectedLayout()">Delete layout</button>
+                <input type="button" value="Copy run link" onclick="copyRunLink()"/>
+                <input type=button value='Refresh' id='refresh' onClick='autoUpdater.refreshAll()'/>
+                Auto refresh<input type=checkbox id='autoRefresh' onClick='onAutoRefreshClicked()'/>
+                <input type=button value='Clear all' onClick='onClearAll()'/>
+                <button onclick="copyEncodedLayout()">Export</button>
+                <button onclick="importEncodedLayout()">Import</button>
+            </div>
+            <div id="title_div"></div>
+            <div id="enclosing_div">
+                <label>
+                    <input type="checkbox" id="comparisonMode" onchange="onComparisonModeChanged()">
+                    Comparison mode
+                </label>
+
+                <div id="comparisonControls" style="display: none;">
+                    Compare with run:
+                    <input type="text" id="comparisonRunNumber" value="0" onchange="onComparisonRunChanged()">
+                </div>
+
+                <div id="plots_split_area">
+                    <div id="plots_container"></div>
+                    <div id="comparison_plots_container"></div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,2918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Encoding -->
+    <meta charset="UTF-8">
+
+    <link rel="stylesheet" href="midas.css">
+
+    <script src="controls.js"></script>
+    <script src="midas.js"></script>
+    <script src="mhttpd.js"></script>
+    <script src="mplot.js"></script>
+    <script src="filesrw.js"></script>
+
+
+    <link rel="stylesheet" type="text/css" href="PixelQC/tabs.css">
+    <link rel="stylesheet" type="text/css" href="PixelQC/DUTGeometry.css">
+
+    <style>
+        textarea {
+            overflow-y: scroll;
+            height: 100px;
+            resize: none; /* Remove this if you want the user to resize the textarea */
+        }
+        .measurement {font-size:10px;}
+        /*.mbutton {font-size:10px}*/
+    </style>
+
+    <title>Single Chip QC Test</title>
+</head>
+
+<body class="mcss" onload="mhttpd_init('Pixel/Pixel QC Test');mplot_init()" style="margin-left: 15px; margin-top: 15px;">
+    <!-- header and side navigation will be filled in mhttpd_start -->
+    <div id="mheader"></div>
+    <div id="msidenav"></div>
+
+    <div id="mmain">
+
+        <!-- Source Scan Manual Intervention Popup -->
+        <div id="sourceScanPopup" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+            <div style="background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 30%; border-radius: 10px; box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);">
+                <h2 style="text-align: center;">Source Scan Intervention</h2>
+                <p style="font-size: 18px; text-align: center;">Please move the source to sensor: <strong id="sourceNextSensor"></strong></p>
+                <div style="text-align: center; margin-top: 20px;">
+                    <button id="sourceScanOkButton" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">OK</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic monitoring watchers will be created by JavaScript -->
+        <div id="monitoring-watchers"></div>
+
+        <!-- Source Scan Watchers -->
+        <div class="modb" data-odb-path="/PixelQC/Flags/source_sensor_position_adjusted" onchange="handleSourceScanIntervention(this.value);" style="display:none;"></div>
+        <div id="sourceSensorPosition" class="modb" data-odb-path="/PixelQC/Flags/source_sensor_position" style="display:none;"></div>
+
+        <!-- Stream configuration watcher -->
+        <div class="modb" data-odb-path="/PixelQC/Flags/stream" onchange="updateStreamVisibility(this.value);" style="display:none;"></div>
+
+        <h2>DUT Geometry</h2>
+        <table class="mtable" id="dut-geometry-div" style="display: inline-block; vertical-align:top">
+            <tr><th class="mtableheader">DUT Geometry</th></tr>
+            <tr>
+                <td>
+                    <div id="dut_geometry"></div>
+                    <div class="modbvalue" data-odb-path="/Equipment/LinksCentral/Settings/ASICMask"
+                        onchange="ASICMaskManager.refreshFromODB()" style="display: none;">
+                    </div>
+
+                </td>
+            </tr>
+        </table>
+
+        <h2>Control parameters</h2>
+
+        <table class="mtable" id="sequencer state" style="display: inline-block; vertical-align:top">
+            <tr><th colspan="2" class="mtableheader">Status </th></tr>
+            <tr>
+                <th>Name</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>PySequencer running</td>
+                <td id="seqActive" class="Light" align="center"></td>
+                <div class="modbvalue" id="seqRun" onchange="updateSeqState();" data-odb-path="/PySequencer/State/Running" style="visibility:hidden; width: 0; height: 0;"></div>
+                <div class="modbvalue" id="seqPause" onchange="updateSeqState();" data-odb-path="/PySequencer/State/Paused" style="visibility:hidden; width: 0; height: 0; "></div>
+            </tr>
+            <tr>
+                <td>PySequencer file</td>
+                <td><div class="modbvalue" id="seqLoadedFile" data-odb-path="/PySequencer/State/Filename" data-odb-editable="0" style="text-align:center" onchange="update_sequencer_vals_to_default()"></div></td>
+            </tr>
+            <tr>
+                <td rowspan="3">PySequencer actions</td>
+
+                <td align="center"><button id="buttonSequencerStop" onclick="confirmSequencerStop()">Stop!</button></td>
+            </tr>
+            <tr>
+                <td align="center"><button id="buttonSequencerPause" onclick="confirmSequencerPause()">Pause!</button></td>
+            </tr>
+            <tr>
+                <td align="center"><button id="buttonSequencerResume" onclick="confirmSequencerResume()">Resume!</button></td>
+            </tr>
+            <tr>
+                <td>Monitor</td>
+            <td><div class="modbvalue" id="seqLoadedFile" data-odb-path="/PixelQC/Monitoring/Message" data-odb-editable="0" onchange="monitoring_message_change(this.value)"></div></td>
+            </tr>
+            <tr>
+                <td>Watchdog OK</td>
+                <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelWatchDog/Variables/OK_all" data-color="lightgreen" data-background-color="red"></div></td>
+            </tr>
+            <tr>
+                <td>Programs OK</td>
+                <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelWatchDog/Variables/OK_programs" data-color="lightgreen" data-background-color="red"></div></td>
+            </tr>
+
+        </table>
+
+
+        <table class="mtable" id="ADCs" style="display: inline-block; vertical-align:top">
+            <tr><th colspan="2" class="mtableheader">ADC Readings</th></tr>
+            <tr>
+                <th>Name</th>
+                <th>Value</th>
+            </tr>
+        </table>
+
+        <!---div name="modbthermo" style="width:60px;height:100px;"
+            data-odb-path="/Equipment/PixelQCADC//Variables/Input[2]" data-min-value="0"
+            data-max-value="2" data-color="blue" data-scale="1"></div--->
+
+        <table class="mtable" id="chip_monitoring" style ="display: inline-block; vertical-align:top">
+            <tr><th colspan="3" class="mtableheader">Monitoring</th></tr>
+            <tr>
+                <th></th>
+                <th>Upstream (US)</th>
+                <th>Downstream (DS)</th>
+            </tr>
+            <tr>
+                <td>LV current</td>
+                <td id="lv_status_US" class="Light" align="center"></td>
+                <td id="lv_status_DS" class="Light" align="center"></td>
+            </tr>
+            <tr>
+                <td>HV current</td>
+                <td id="hv_status_US" class="Light" align="center"></td>
+                <td id="hv_status_DS" class="Light" align="center"></td>
+            </tr>
+            <tr>
+                <td>Temperature</td>
+                <td id="temp_US" align="center">--</td>
+                <td id="temp_DS" align="center">--</td>
+            </tr>
+
+
+        </table>
+
+        <table class="mtable" id="config pars" style="display: inline-block; vertical-align:top">
+            <tr><th colspan="4" class="mtableheader">General Settings</th></tr>
+            <tr>
+                <th colspan="1">Name</th>
+                <th colspan="3">Value</th>
+            </tr>
+            <!-- <tr>
+                <td>Is Mupix11</td>
+                <td colspan="3" style="text-align: center"><input type="checkbox" id="IsMuPix11" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/PixelsCentral/Settings/ASICs/Global/IsMupix11"></input></td>
+            </tr> -->
+            <tr>
+                <td colspan="1">Object ID</td>
+
+                <td colspan="1"><div class="modbvalue" id="partNumber" data-odb-path="/PixelQC/Dut/PartNumber" align="center"data-odb-editable="1" onchange="updateChipType(1,this.value);"></div></td>
+
+                <td colspan="1"><div class="modbvalue" data-odb-path="/PixelQC/Dut/LotNumber" align="center"data-odb-editable="1"></div></td>
+
+                <td colspan="1"><div class="modbvalue" data-odb-path="/PixelQC/Dut/ItemNumber" align="center"data-odb-editable="1"></div></td>
+            </tr>
+            <tr>
+                <td>SIN inverted?</td>
+                <td colspan="3" style="text-align: center"><input type="checkbox" id="invertSIN" name="CheckBoxPixels" class="modbcheckbox" data-odb-path="/Equipment/PixelsCentral/Commands/InvertSerialIn"></input></td>
+            </tr>
+
+            <tr>
+                <td rowspan="3">Chip Type</td>
+                <td colspan="3" style="text-align: center" id="chipMPtype"></td>
+            </tr>
+            <tr>
+                <td colspan="3" style="text-align: center" id="chipThickness"></td>
+            </tr>
+            <tr>
+                <td colspan="3" style="text-align: center" id="chipResistivity"></td>
+            </tr>
+            <tr>
+                <td colspan="1">DUT type:</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/PixelQC/Dut/DUT" align="center" data-odb-editable="1" onchange="drawGeometry()"></div></td>
+            </tr>
+            <tr class="setting-Nchips">
+                <td colspan="1">Number of chips:</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/PixelQC/Dut/N_chips"align="center"></div></td>
+            </tr>
+            <tr class="setting-Nlinks">
+                <td colspan="1">Number of links per chips:</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/N_Links_per_chip"align="center"></div></td>
+            </tr>
+            <tr>
+                <td>Asic mask (US / DS):</td>
+                <td colspan="3" align="center">
+                    <div style="font-family:monospace; text-align:center;">
+                        <div class="us"><strong>US:</strong> <div class="modbvalue" data-odb-path="/Equipment/LinksCentral/Settings/ASICMask[0]" data-format="%b" data-odb-editable="0" style="display:inline-block;"></div></div>
+                        <div class="ds"><strong>DS:</strong> <div class="modbvalue" data-odb-path="/Equipment/LinksCentral/Settings/ASICMask[1]" data-format="%b" data-odb-editable="0" style="display:inline-block;"></div></div>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+            <td>LVDS Link mask:</td>
+            <td colspan="3" align="center">
+                <div id="lvdsMaskRaw"class="modbvalue" data-odb-path="/Equipment/LinksCentral/Settings/LVDSLinkMask[0]" data-odb-editable="0" style="position:absolute;left:-9999px;width:0;height:0;overflow:hidden;"></div>
+                <span id="lvdsMaskHex" style="font-family:monospace;"></span>
+            </td>
+            </tr>
+            <tr class="setting-feblink us">
+                <td colspan="1">DAB-STP Position US:</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/PixelQC/Setup/feb_pos[0]"align="center" data-odb-editable="1"></div></td>
+            </tr>
+            <tr class="setting-feblink ds">
+                <td colspan="1">DAB-STP Position DS:</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/PixelQC/Setup/feb_pos[1]"align="center" data-odb-editable="1"></div></td>
+            </tr>
+            <tr class="setting-us">
+                <td colspan="1">Stream</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/PixelQC/Flags/stream"align="center" data-odb-editable="1"></div></td>
+            </tr>
+            <!-- DEPRECATED: both_sided checkbox is replaced by /PixelQC/Flags/stream (set to "both_sided" for both sides) -->
+            <!-- TODO: Remove this checkbox once all scripts are updated to use /PixelQC/Flags/stream -->
+            <tr>
+                <td colspan="1">both sides (deprecated)</td>
+                <td colspan="3" style="text-align: center"><input type="checkbox" class="modbcheckbox" data-odb-path="/PixelQC/Flags/both_sided" disabled title="This is deprecated. Use stream field above instead."></input></td>
+            </tr>
+            <tr>
+                <td colspan="1">Reset PLL</td>
+                <td colspan="3" align="center"><button id="reset_pll_2" value = "1" onclick="ResetPLL(this.id)">Reset</button></td>
+            </tr>
+            <tr>
+                <td colspan="1">Reset BiasBlock</td>
+                <td colspan="3" align="center"><button id="reset_bias_block_2" onclick="ResetBiasBlock(this.id)">Reset</button></td>
+            </tr>
+            <tr>
+                <td colspan="1">Set Default DACS</td>
+                <td colspan="3" align="center"><button id="setDefaultDACs_2" onclick="setDefaultDACs(this.id)">Set</button></td>
+                <!-- <button id="loadDefaultDACs" onclick="setDefaultDACs()">Set default DACs</button> -->
+            </tr>
+            <tr>
+                <td colspan="1">Chip to configure:</td>
+                <td colspan="3"><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/MupixChipToConfigure" align="center"data-odb-editable="1"></div></td>
+            </tr>
+        </table>
+
+        <div style ="display: none">
+            <h2>Monitoring values</h2>
+            <div style ="display: block">
+                Temperature:
+                <div id="monit_temperature" style ="display: inline-block">XXX</div>
+            </div>
+        </div>
+
+        <div name="modb" data-odb-path="/Equipment/PixelsCentral/Variables/PCLS" onchange="update_pcls_US(this.value)"
+            style="display:none">
+        </div>
+        <div name="modb" data-odb-path="/Equipment/PixelsCentral/Variables/PCLS" onchange="update_pcls_DS(this.value)"
+            style="display:none">
+        </div>
+        <div name="modb" data-odb-path="/Equipment/PixelsCentral/Variables/PCMS"
+            onchange="update_pcms(this.value)" style="display:none">
+        </div>
+
+        <div name="modb" data-odb-path="/PixelQC/Dut/DUT" onchange="renderLVDSButtons(this.value)" style="display:none">
+        </div>
+
+        <table class="mtable" id="lvds-container" style="display: inline-block; vertical-align:top">
+        </table>
+
+        <div class="wrapper">
+            <div class="tabs">
+
+                <!-- Power setup tab -->
+
+                <div class="tab">
+                    <input type="radio" name="css-tabs" id="tab-1" checked class="tab-switch">
+                    <label for="tab-1" class="tab-label">Power Setup</label>
+                        <div class="tab-content">
+                            <table class="mtable" id="HVSUPPLY0">
+                                <tr><th colspan="8" class="mtableheader">HV SUPPLY </th></tr>
+                                <tr>
+                                    <th colspan="2" >Channel</th>
+                                    <th>State</th>
+                                    <th>Demand Voltage</th>
+                                    <th>Voltage</th>
+                                    <th>Current Limit</th>
+                                    <th>Current (uA)</th>
+                                    <th>Description</th>
+                                </tr>
+                                <tr>
+                                    <th id="us_header">US</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/HVSUPPLY0/Variables/State[0]" data-color="lightgreen" data-background-color="red"></div></td>
+                                    <td style="text-align: center"><input type="checkbox" id="hv_enable_checkbox_0"name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/HVSUPPLY0/Variables/Set State[0]"></input></td>
+                                    <td><div class="modbvalue" data-odb-path="/Equipment/HVSUPPLY0/Variables/Demand Voltage[0]" data-odb-editable="1" data-validate="enforceNegativeInput"></div></td>
+                                    <td><div class="modbvalue" data-format="e3" data-odb-path="/Equipment/HVSUPPLY0/Variables/Voltage[0]"></div></td>
+                                    <td><div id="keithley_currentLimit" class="modbvalue" data-format="e3" data-odb-path="/Equipment/HVSUPPLY0/Variables/Current Limit[0]" data-odb-editable="1" data-formula="x"></div></td>
+                                    <td><div id="keithley_curr" data-format="e3" class="modbvalue" data-odb-path="/Equipment/HVSUPPLY0/Variables/Current[0]" data-formula="1000000*x"></div></td>
+                                    <td id="HVSUPPLY0_0" style="text-align: center">US HV</td>
+                                </tr>
+                                <tr id="hv_row">
+                                    <th id="ds_header">DS</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/HVSUPPLY1/Variables/State[0]" data-color="lightgreen" data-background-color="red"></div></td>
+                                    <td style="text-align: center"><input type="checkbox" id="hv_enable_checkbox_1" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/HVSUPPLY1/Variables/Set State[0]"></input></td>
+                                    <td><div class="modbvalue" data-odb-path="/Equipment/HVSUPPLY1/Variables/Demand Voltage[0]" data-odb-editable="1"></div></td>
+                                    <td><div class="modbvalue" data-format="e3" data-odb-path="/Equipment/HVSUPPLY1/Variables/Voltage[0]"></div></td>
+                                    <td><div id="keithley_currentLimit" class="modbvalue" data-format="e3" data-odb-path="/Equipment/HVSUPPLY1/Variables/Current Limit[0]" data-odb-editable="1" data-formula="x"></div></td>
+                                    <td><div id="keithley_curr" data-format="e3" class="modbvalue" data-odb-path="/Equipment/HVSUPPLY1/Variables/Current[0]" data-formula="1000000*x"></div></td>
+                                    <td id="HVSUPPLY1_0" style="text-align: center">DS HV</td>
+                                </tr>
+                                <tr>
+                            </table>
+
+
+                            <!-- HAMEG LV SUPPLY -->
+
+                            <table class="mtable" id="lvsupply0">
+                                <tr><th colspan="9" class="mtableheader">LV SUPPLY</th></tr>
+                                <tr>
+                                    <th colspan="2" >Channel</th>
+                                    <th>State</th>
+                                    <th>Demand Voltage</th>
+                                    <th>Voltage</th>
+                                    <th>OVP</th>
+                                    <th>Current Limit</th>
+                                    <th>Current</th>
+                                    <th>Description</th>
+                                </tr>
+                                <tr>
+                                    <th>0</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/LVSUPPLY0/Variables/State[0]" data-color="lightgreen" data-background-color="red"></div></td>
+                                    <td style="text-align: center"><input type="checkbox" id="lv_enable_checkbox_0" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/LVSUPPLY0/Variables/Set State[0]"></input></td>
+                                    <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Demand Voltage[0]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_voltage_ch0" class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Voltage[0]"></div></td>
+                                    <td><div id="lv_ovp_ch0" class="modbvalue" data-format="f1" data-odb-path="/Equipment/LVSUPPLY0/Variables/OVP Level[0]"></div></td>
+                                    <td><div id="lv_currentLimit_ch0" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current Limit[0]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_current_ch0" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current[0]"></div></td>
+                                    <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Settings/Channel Names[0]" data-odb-editable="1"></div></td>
+                                </tr>
+                                <tr>
+                                    <th>1</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/LVSUPPLY0/Variables/State[1]" data-color="lightgreen" data-background-color="red"></div></td>
+                                    <td style="text-align: center"><input type="checkbox" id="lv_enable_checkbox_1" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/LVSUPPLY0/Variables/Set State[1]"></input></td>
+                                    <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Demand Voltage[1]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_voltage_ch1" div class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Voltage[1]"></div></td>
+                                    <td><div id="lv_ovp_ch1" class="modbvalue" data-format="f1" data-odb-path="/Equipment/LVSUPPLY0/Variables/OVP Level[1]"></div></td>
+                                    <td><div id="lv_currentLimit_ch1" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current Limit[1]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_current_ch1" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current[1]"></div></td>
+                                    <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Settings/Channel Names[1]" data-odb-editable="1"></div></td>
+                                </tr>
+                                <tr>
+                                    <th>2</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/LVSUPPLY0/Variables/State[2]" data-color="lightgreen" data-background-color="red"></div></td>
+                                    <td style="text-align: center"><input type="checkbox" id="lv_enable_checkbox_2" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/LVSUPPLY0/Variables/Set State[2]"></input></td>
+                                    <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Demand Voltage[2]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_voltage_ch2" div class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Voltage[2]"></div></td>
+                                    <td><div id="lv_ovp_ch2" class="modbvalue" data-format="f1" data-odb-path="/Equipment/LVSUPPLY0/Variables/OVP Level[2]"></div></td>
+                                    <td><div id="lv_currentLimit_ch2" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current Limit[2]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_current_ch2" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current[2]"></div></td>
+                                    <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Settings/Channel Names[2]" data-odb-editable="1"></div></td>
+                                </tr>
+                                <tr>
+                                    <th>3</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/LVSUPPLY0/Variables/State[3]" data-color="lightgreen" data-background-color="red"></div></td>
+                                    <td style="text-align: center"><input type="checkbox" id="lv_enable_checkbox_3" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/LVSUPPLY0/Variables/Set State[3]"></input></td>
+                                    <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Demand Voltage[3]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_voltage_ch3" class="modbvalue" data-format="f2" data-odb-path="/Equipment/LVSUPPLY0/Variables/Voltage[3]"></div></td>
+                                    <td><div id="lv_ovp_ch3" class="modbvalue" data-format="f1" data-odb-path="/Equipment/LVSUPPLY0/Variables/OVP Level[3]"></div></td>
+                                    <td><div id="lv_currentLimit_ch3" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current Limit[3]" data-odb-editable="1"></div></td>
+                                    <td><div id="lv_current_ch3" class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Variables/Current[3]"></div></td>
+                                    <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/LVSUPPLY0/Settings/Channel Names[3]" data-odb-editable="1"></div></td>
+                                </tr>
+
+                            </table>
+                            <table class="mtable" id="TEMPDIODEs" style="display: inline-block; vertical-align:top">
+                                <tr><th colspan="8" class="mtableheader">Temperature Diodes </th></tr>
+                                 <tr>
+                                    <th colspan="2" ></th>
+                                    <th>Temperature</th>
+                                    <th>Voltage</th>
+                                    <th>Current (uA)</th>
+                                    <th>Description</th>
+                                </tr>
+                                <tr class="tempdiode0-row">
+                                    <th>US</th>
+                                     <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/TEMPDIODE0/Variables/State[0]" data-color="lightgreen" data-background-color="red"></div></td>
+                                     <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/TEMPDIODE0/Variables/Temperature[0]"></div></td>
+                                     <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/TEMPDIODE0/Variables/Voltage[0]"></div></td>
+                                     <td><div id="tempdiode_0" data-format="f2" class="modbvalue" data-odb-path="/Equipment/TEMPDIODE0/Variables/Current[0]" data-formula="1000000*x"></div></td>
+                                     <td id="TEMPDIODE0_0" style="text-align: center">Diode_US</td>
+                                 </tr>
+                                <tr class="tempdiode1-row">
+                                    <th>DS</th>
+                                    <td style="text-align: center"><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/Equipment/TEMPDIODE1/Variables/State[0]" data-color="lightgreen" data-background-color="red"></div></td>
+                                     <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/TEMPDIODE1/Variables/Temperature[0]"></div></td>
+                                    <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/TEMPDIODE1/Variables/Voltage[0]"></div></td>
+                                     <td><div id="tempdiode_1" data-format="f2" class="modbvalue" data-odb-path="/Equipment/TEMPDIODE1/Variables/Current[0]" data-formula="1000000*x"></div></td>
+                                     <td id="TEMPDIODE0_1" style="text-align: center">Diode_DS</td>
+                                </tr>
+                                <tr>
+                            </table>
+                            <table class="mtable" id="ArduinoAdc" style="display: inline-block; vertical-align:top">
+                                <tr><th colspan="8" class="mtableheader">Arduino ADC </th></tr>
+                                 <tr>
+                                    <th colspan="1" ></th>
+                                    <th>Voltage</th>
+                                    <th>Description</th>
+                                </tr>
+                                <tr>
+                                    <th>ADC 0</th>
+                                     <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/ArduinoSenseADC/Variables/Voltage[0]"></div></td>
+                                     <td id="ArduinoADC0" style="text-align: center">LL DAB-STP 2</td>
+                                 </tr>
+                                <tr>
+                                    <th>ADC 1</th>
+                                    <td><div class="modbvalue" data-format="f3" data-odb-path="/Equipment/ArduinoSenseADC/Variables/Voltage[1]"></div></td>
+                                     <td id="ArduinoADC1" style="text-align: center">LR DAB-STP 1</td>
+                                </tr>
+                                <tr>
+                            </table>
+
+
+            <!-- Thermal air-->
+
+            <table class="mtable" id="Thermal_Air">
+                            <tr><th colspan="12" class="mtableheader">Temperature Control </th></tr>
+                            <tr>
+                                <th colspan="2" >Channel</th>
+                                <!-- <th>State</th> -->
+                                <th>Setpoint</th>
+                                <th>Temperture</th>
+                                <th>Flowrate</th>
+                                <th>Actual Flowrate</th>
+                                <!-- <th colspan="2">Temp Range</th> -->
+                                <th colspan="2"> Temp PT100 / °C</th>
+                                <th colspan="1"> Temp US / °C</th>
+                                <th colspan="1"> Temp DS / °C</th>
+
+                                <!-- <th>Description</th> -->
+                            </tr>
+                            <tr id="TA5000">
+                                <td style="text-align: center">
+                                    <div class="modbbox" style="width: 20px; height: 20px;"
+                                        data-odb-path="/Equipment/TA5000/Commands/CMD_head"
+                                        data-color="lightgreen" data-background-color="red"></div>
+                                </td>
+                                <td style="text-align: center">
+                                    <input type="checkbox" name="CheckboxPixels" class="modbcheckbox"
+                                        data-odb-path="/Equipment/TA5000/Commands/CMD_head"></input>
+                                </td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-odb-path="/Equipment/TA5000/Commands/CMD_setpoint"
+                                        data-odb-editable="1"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-format="f2"
+                                        data-odb-path="/Equipment/TA5000/Variables/temperature"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-odb-path="/Equipment/TA5000/Commands/CMD_flow_rate"
+                                        data-odb-editable="1"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-odb-path="/Equipment/TA5000/Variables/flow_rate"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-format="f2"
+                                        data-odb-path="/Equipment/PT100/Variables/Temperature[0]"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-format="f2"
+                                        data-odb-path="/Equipment/PT100/Variables/Temperature[1]"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-format="f2"
+                                        data-odb-path="/Equipment/TEMPDIODE0/Variables/Temperature[0]"></div></td>
+                                <td><div class="modbvalue" style="text-align: center;"
+                                        data-format="f2"
+                                        data-odb-path="/Equipment/TEMPDIODE0/Variables/Temperature[1]"></div></td>
+                            </tr>
+                            <tr>
+                        </table>
+                    </div>
+                </div>
+
+                    <!-- Manual chip control tab -->
+
+                    <div class="tab">
+                        <input type="radio" name="css-tabs" id="tab-2" class="tab-switch">
+                        <label for="tab-2" class="tab-label">Manual Chip Control</label>
+                        <div class="tab-content">
+                            <h3>Mupix DACs</h3>
+                            <div class="input-container">
+                                <label for="dac_chip_number">Chip:</label>
+                                <input type="text" value=0 id="dac_chip_number" onchange="dac_update_chip_number(event)">
+                            </div>
+                            <table class="mtable" id="BIASDACS" style="display: inline-block">
+                                <tr><th colspan="2" class="mtableheader">Bias DACs</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <table class="mtable" id="CONFDACS" style="display: inline-block; vertical-align:top">
+                                <tr><th colspan="2" class="mtableheader">Conf DACs</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <table class="mtable" id="VDACS" style="display: inline-block; vertical-align:top">
+                                <tr><th colspan="2" class="mtableheader">VDACs</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <table class="mtable" id="MODES" style="display: inline-block; vertical-align:top">
+                                <tr><th colspan="2" class="mtableheader">MODES</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <div class="btn-group" style="vertical-align:top">
+                                 <!-- configure chip -->
+                                <button id="configButton_1" onclick="configureMupix(this.id)">Configure Chip</button>
+                                <!-- pll is set to 0 and back to 1 -->
+                                <button id="reset_pll_1" onclick="ResetPLL(this.id)">Reset PLL</button>
+                                <!-- biablosck is set to 0 and then back to 5 -->
+                                <button id="reset_bias_block" onclick="ResetBiasBlock(this.id)">Reset BiasBlock</button>
+                                <!-- load the default dacs, specified in gbf -->
+                                <button id="loadDefaultDACs_1" onclick="setDefaultDACs(this.id)">Set default DACs</button>
+                                </tr>
+                            </div>
+                            <div id="dac-global-box" style="display:inline-block; vertical-align:top; margin-left:16px;">
+                            <div style="border:1px solid #9bbcff; border-radius:8px; padding:10px; min-width:260px;">
+                                <div style="font-weight:700; margin-bottom:6px;">Set DAC Globally</div>
+
+                                <label style="display:block; margin-bottom:6px;">
+                                DAC:
+                                <select id="dac-global-select" style="width:100%;"></select>
+                                </label>
+
+                                <label style="display:block; margin-bottom:6px;">
+                                Value:
+                                <input id="dac-global-value" type="number" step="1" style="width:100%;" />
+                                </label>
+                                <details style="margin:6px 0 10px 0;">
+                                <summary style="cursor:pointer;">Targets (chips)</summary>
+                                <div style="margin-top:6px; display:flex; gap:12px; align-items:center;">
+                                    <label>
+                                    From:
+                                    <input id="dac-global-chipstart" type="number" min="0" value="0" style="width:80px;">
+                                    </label>
+                                    <label>
+                                    To:
+                                    <input id="dac-global-chipend" type="number" min="0" value="35" style="width:80px;">
+                                    </label>
+                                </div>
+                                <div style="font-size:12px; opacity:0.7; margin-top:6px;">
+                                    Applies to chip IDs <em>start…end</em> (inclusive).
+                                </div>
+                                </details>
+                                <button id="dac-global-apply" style="width:100%; padding:6px 8px; border:1px solid #9bbcff; border-radius:8px; background:#eaf0ff;">
+                                Apply to all chips
+                                </button>
+
+                                <div id="dac-global-status" style="font-size:12px; margin-top:8px; min-height:1em;"></div>
+                            </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- QC tab -->
+
+                    <div class="tab">
+                        <input type="radio" name="css-tabs" id="tab-3" class="tab-switch">
+                        <label for="tab-3" class="tab-label">QC tests</label>
+                        <div class="tab-content">
+                            <div class="qc-column-main" id="qc_column_main">
+                            <div class="table-container">
+                            <table class="mtable" id="Object ID" style="display:inline-block; vertical-align:top">
+                                <tr><th colspan="3">Object ID</th></tr>
+                                <tr>
+                                    <th>Part No.</th>
+                                    <th>Lot No.</th>
+                                    <th>Item No.</th>
+                                </tr>
+                                <tr>
+                                    <td><div class="modbvalue" id="partNumber" data-odb-path="/PixelQC/Dut/PartNumber" data-odb-editable="1" oninput="updateChipType(1,event);"></div></td>
+                                    <td><div class="modbvalue" data-odb-path="/PixelQC/Dut/LotNumber" data-odb-editable="1"></div></td>
+                                    <td><div class="modbvalue" data-odb-path="/PixelQC/Dut/ItemNumber" data-odb-editable="1"></div></td>
+                                </tr>
+                            </table>
+                        </div>
+
+                            <div class="table-container">
+                            <table class="mtable" id="SetupParams" style="display:inline-block">
+                                <tr><th colspan="3">Setup parameters</th></tr>
+                                <tr>
+                                    <th>Setup:</th>
+                                    <td style="text-align:center"><div id="setupID" class="modbvalue" data-odb-path="/PixelQC/Setup/Setup" data-odb-editable="1" oninput="updateLVdescriptions();"></div></td>
+                                </tr>
+                                <tr>
+                                    <th>DUT type:</th>
+                                    <td style="text-align:center"><div class="modbvalue" data-odb-path="/PixelQC/Dut/DUT"></div></td>
+                                </tr>
+                                <tr>
+                                    <th>Number of chips:</th>
+                                    <td style="text-align:center"><div id="Nchips" class="modbvalue" data-odb-path="/PixelQC/Dut/N_chips"></div></td>
+                                </tr>
+                                <tr>
+                                    <th>Fast QC</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/FastQC"></input></td>
+                                </tr>
+                                <tr>
+                                    <th>Nominal IV scan (for fast QC)</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/NominalIV"></input></td>
+                                </tr>
+                                <tr>
+                                    <th>Measure slow control during Test</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/MeasureSlowControl"></input></td>
+                                </tr>
+                                <tr>
+                                    <th>Apply Ladder DACs (fast QC)</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/LadderDACs"></input></td>
+                                </tr>
+                                <tr>
+                                    <th>Reconfigure chip after LV off</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/ReconfigAfterLVoff"></input></td>
+                                </tr>
+                                <tr>
+                                    <th>Capacitor on HV line</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/HVlineCapacitor"></input></td>
+                                </tr>
+                                <tr>
+                                    <th>Start with lower LV</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/probecard_lower_start_LV"></input></td>
+                                </tr>
+				<tr>
+				    <th>QC on Probestation</th>
+				    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/Probestation"></input></td>
+				</tr>
+				<tr>
+                                    <th>Mask bad links before noise scan</th>
+                                    <td style="text-align:center"><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/PixelQC/Flags/flag_mask_bad_links"></input></td>
+                                </tr>
+        		    </table>
+
+                            </div>
+
+
+                            <label for="test_procedures" style="display:block; vertical-align:bottom">Choose a QC test:</label>
+
+                            <select name="test_procedures" id="test_procedures" onchange="
+                                    let value = document.getElementById('test_procedures').value,
+                                        confirmFunc = window['confirmQC_'+value];
+                                    hide_qc_column('qc-column');
+                                    if(value == 'none') return;
+                                    show_qc_column('qc_column_' + value);
+                                    if(value == 'full') show_qc_column('qc_column_grading');
+                                    if(confirmFunc) confirmFunc();
+                                ">
+                                <option value="none">None</option>
+                                <option value="full">Full</option>
+                                <option value="check_contact">Check Contact</option>
+                                <option value="iv_scan">IV scan</option>
+                                <option value="onChip_voltages">on-chip voltages</option>
+                                <option value="vdac">VDAC scan</option>
+                                <option value="vdac_power">VDAC power consumption</option>
+                                <option value="signal_transmission">Signal transmission</option>
+                                <option value="lvds_links">LVDS links</option>
+                                <option value="noise_scan">Noise scan</option>
+                                <option value="source_scan">Source scan</option>
+                                <option value="none">None</option>
+                            </select>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_full">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCFull()" style="display:block; vertical-align:top">Start Chip QC</button>
+                            <table class="mtable" id="qcFullParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_grading">
+                            <table class="mtable" id="qcOptions" style="display: block; vertical-align:top">
+                                <tr><th colspan="2" class="mtableheader">QC grading parameters:</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <!-- QC contact table, shows if contacts were established successfully. Displayed for check contact QC and for full QC -->
+                            <table class="mtable" id="qcContactTable" style="vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Contact status</th></tr>
+                                <tr>
+                                    <td>HV contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_HV" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>LV contact (unconfigured)</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_LV_unconfigured" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>LV contact (configured)</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_LV_configured" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDD1 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDD1" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDD2 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDD2" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDDA1 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDDA1" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDDA2 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDDA2" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VSS1 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VSS1" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VSS2 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VSS2" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_check_contact">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start Check Contact</button>
+                            <table class="mtable" id="qcCheckContactParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <!-- QC contact table, shows if contacts were established successfully. Displayed for check contact QC and for full QC -->
+                            <table class="mtable" id="qcContactTable" style="vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Contact status</th></tr>
+                                <tr>
+                                    <td>HV contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_HV" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>LV contact (unconfigured)</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_LV_unconfigured" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>LV contact (configured)</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_LV_configured" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDD1 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDD1" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDD2 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDD2" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDDA1 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDDA1" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VDDA2 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VDDA2" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VSS1 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VSS1" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                                <tr>
+                                    <td>VSS2 level contact</td>
+                                    <td><div class="modbbox" style="width: 20px; height: 20px;" data-odb-path="/PixelQC/Monitoring/Contact/Contact_VSS2" data-color="lightgreen" data-background-color="red"></div></td>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_iv_scan">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start IV</button>
+                            <table class="mtable" id="qcIVparameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_onChip_voltages">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Measure on-chip voltages</button>
+                            <table class="mtable" id="qcOnChipVoltagesParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_vdac">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start VDAC scan</button>
+                            <table class="mtable" id="qcVDACscanParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_vdac_power">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start VDAC power consumption scan</button>
+                            <table class="mtable" id="qcVDACpowerConsumptionsParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div class="qc-column" id="qc_column_signal_transmission">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start signal transmission test</button>
+                            <table class="mtable" id="qcSignalTransmissionParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                                <b>Info:</b><br>Currently, only supposed to be used <br> for ladders and modules.
+                            </div>
+
+                            <div class="qc-column" id="qc_column_lvds_links">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start LVDS link test</button>
+                            <table class="mtable" id="qcLVDSlinksParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            <b>Info:</b><br>For fast QC, only VPVCO and VNVCO are<br>scanned.
+                            </div>
+
+                            <div class="qc-column" id="qc_column_noise_scan">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start noise scan</button>
+                            <table class="mtable" id="qcNoiseScanParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+
+                            </div>
+                            <div class="qc-column" id="qc_column_source_scan">
+                            <button class="mbutton" onclick="confirmSequencerStart_QCInd()" style="display:block; vertical-align:top">Start source scan</button>
+                            <table class="mtable" id="qcSourceScanParameters" style="display: block; vertical-align:bottom">
+                                <tr><th colspan="2" class="mtableheader">Parameters</th></tr>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Value</th>
+                                </tr>
+                            </table>
+                            </div>
+
+                            <div id="qc-extra-comments" style="display:none; vertical-align:top">
+                                <table class="mtable" id="qc-extra-comments-table" style="display: block; vertical-align:bottom">
+                                    <tr><th colspan="2" class="mtableheader">Observations</th></tr>
+                                </table>
+                                <button class="mbutton" id="qc-extra-comments-button" onclick="addExtraComments()" style="display:block; vertical-align:top">Add Extra Comments</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Noise scan tab -->
+
+                    <div class="tab">
+                        <input type="radio" name="css-tabs" id="tab-4" class="tab-switch">
+                        <label for="tab-4" class="tab-label">Noise Scan</label>
+                        <div class="tab-content" style="display: table-row">
+                            <div style="display: table-cell">
+                                <table class="mtable" id="noise_scan_pars" style="vertical-align:top">
+                                    <tr><th colspan="2" class="mtableheader">Noise Scan Parameters</th></tr>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Value</th>
+                                    </tr>
+                                    <tr>
+                                        <td>Integration Time</td>
+                                        <td><div class="modbvalue" data-format="f2" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto integration time" data-odb-editable="1"></div></td>
+                                    </tr>
+                                    <!-- <tr>
+                                        <td>FEB Link Number</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto FEB link number" data-odb-editable="1"></div></td>
+                                    </tr> -->
+                                    <tr>
+                                        <td>Chip Number to Configure</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/MupixChipToConfigure" data-odb-editable="1"  id="noise_scan_chip_number_config" onchange="noise_scan_update_chip_number(this.value)"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Chip Number to Read</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto chip number" onchange=""></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Max Hits</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto max hits" data-odb-editable="1"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Skip if 8b10b Errors</td>
+                                        <td><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto skip if errors"></input></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Tuning</td>
+                                        <td><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/PixelsCentral/Commands/Tuning"></input></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Max 8b10b Errors</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors allowed" data-odb-editable="1"></div></td>
+                                    </tr>
+                                    <tr style="display:none">
+                                        <td>Mask Folder</td>
+                                        <td><div class="modbvalue" data-odb-path="/PixelQC/Setup/MaskFolder" data-odb-editable="0" id="noise_scan_mask_folder"></div></td>
+                                    </tr>
+                                    <tr style="display:none">
+                                        <td>Hitmap Folder</td>
+                                        <td><div class="modbvalue" data-odb-path="/PixelQC/Setup/HitmapFolder" data-odb-editable="0" id="noise_scan_hitmap_folder"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Mask File (999 -> 0)</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Settings/TDACS/0/TDACFILE" data-odb-editable="1" id="noise_scan_mask_file"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Hitmap File (999 -> 0)</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Settings/TDACS/0/HITMAPFILE" data-odb-editable="1" id="noise_scan_hitmap_file"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>ThHigh</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Settings/VDACS/$1/ThHigh" data-odb-editable="1" id="noise_scan_threshold"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>ThLow</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Settings/VDACS/$1/ThHigh" data-odb-editable="1" id="noise_scan_threshold_low"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>VPDAC</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Settings/BIASDACS/$1/VPDAC" data-odb-editable="1" id="noise_scan_vpdac"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Masked links</td>
+                                        <td><div class="modbvalue" data-odb-path="/PixelQC/Monitoring/MaskedLinks" id="update_mask_links"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Invert links</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/LinksCentral/Settings/LVDSLinkInvert[0]"  data-odb-editable="1"id="link_invert"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Lvds links</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/LinksCentral/Settings/LVDSLinkMask[0]"  data-odb-editable="1"id="link_invert"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Rebuild</td>
+                                        <td><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/LinksCentral/Settings/Rebuild"></input></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Create TDAC mask to value</td>
+                                        <td><input type="checkbox" name="CheckboxPixels" class="modbcheckbox" data-odb-path="/Equipment/PixelsCentral/Commands/Create TDAC mask to value"></input></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Masked edge width</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/TDAC edge width" data-odb-editable="1"></div></td>
+                                    </tr>
+                                </table>
+                                <div class="btn-group">
+                                    <button id="QCHistoConfig" onclick="configQCHisto()">Configure Chip</button>
+                                    <button id="QCHistoTDACWrite" onclick="TADCconfigQCHisto()">Write TDACs</button>
+                                    <button id="QCHistoAppendSource" onclick="prependSourceQCHisto()">Use source file names </button>
+                                    <button id="QCHistoResetMask" onclick="resetMaskQCHisto()">Reset Mask</button>
+                                    <button id="QCHistoStart" onclick="startQCHisto()">Collect HitMap</button>
+                                    <button id="MaskNonWorkingLinks" onclick="MaskNonWorkingLinks()">Mask Non Working Links</button>
+                                    <button id="UnMaskNonWorkingLinks" onclick="UnMaskAll()">Unmask all</button>
+                                    <button id="SwitchOffOtherChips" onclick="SwitchOffOtherChips()">Switch Off Other Chips</button>
+                                    <button onclick="runMask()">Mask bad links</button>
+
+                                </div>
+                            </div>
+                            <div style="display: table-cell; vertical-align:top">
+                                <table class="mtable" id="noise_scan_result" style="vertical-align:top">
+                                    <tr><th colspan="2" class="mtableheader">Noise Scan Results</th></tr>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Value</th>
+                                    </tr>
+                                    <tr style="display:none;" id="error_a">
+                                        <td>Error Link A</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link A" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr style="display:none;" id="error_b">
+                                        <td>Error Link B</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link B" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr style="display:none;" id="error_c">
+                                        <td>Error Link C</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link C" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr style="display:none;" id="error_link">
+                                        <td>Error Link</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link A" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <!-- <tr>
+                                        <td>Error Link A</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link A" data-odb-editable="0"></div></td>
+                                    </tr> -->
+                                    <!-- <tr>
+                                        <td>Error Link B</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link B" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Error Link C</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto errors link C" data-odb-editable="0"></div></td>
+                                    </tr> -->
+                                    <tr>
+                                        <td>Number of hits</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto Noisy Hits" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Number of pixels</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QcHisto Noisy Pixels" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Masked pixels</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/Masked pixels" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Not maskable pixels</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/Not maskable pixels" data-odb-editable="0"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Pixel with no hits</td>
+                                        <td><div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/Commands/QCHisto Pixel with no Hits" data-odb-editable="0"></div></td>
+                                    </tr>
+                                </table>
+                                <div class="btn-group" style="vertical-align:top">
+                                    <button id="ShowSelectedHitmap" onclick="draw_hitmap()">Show selected Hitmap</button>
+                                    <button id="ShowCurrentHitmap" onclick="draw_hitmap_current()">Show current Hitmap</button>
+                                    <button id="ShowSelectedHitmap" onclick="draw_mask()">Show selected Mask</button>
+                                    <button id="ShowCurrentHitmap" onclick="draw_mask_current()">Show current Mask</button>
+                                </div>
+                                <canvas id="hitmap_canvas" width="300px" height="300px">
+                                </canvas>
+                                <div id="noise_scan_info"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Slow Control tab -->
+
+                    <div class="tab">
+                        <input type="radio" name="css-tabs" id="tab-sc" class="tab-switch">
+                        <label for="tab-sc" class="tab-label">Slow Control</label>
+                        <div class="tab-content">
+                            <select name="sc_read_options" id="sc_read_options" style="vertical-align:top" onchange="SCSelectADC(document.getElementById('sc_read_options').value)">
+                                <option value="ref_vssa">ref_vssa</option>
+                                <option value="Baseline">Baseline</option>
+                                <option value="blpix">blpix</option>
+                                <option value="thpix">thpix</option>
+                                <option value="blpix_2">blpix_2</option>
+                                <option value="ThLow">ThLow</option>
+                                <option value="ThHigh">ThHigh</option>
+                                <option value="TEST_OUT">TEST_OUT</option>
+                                <option value="vssa">vssa</option>
+                                <option value="thpix_2">thpix_2</option>
+                                <option value="VCAL">VCAL</option>
+                                <option value="VTemp1">VTemp1</option>
+                                <option value="VTemp2">VTemp2</option>
+                            </select>
+                            <div class="btn-group" style="vertical-align:top">
+                                <button id="resetSC" onclick="resetSC()">Reset Slow Control</button>
+                                <button id="configSC" onclick="configureSC()">Configure Slow Control</button>
+                                <button id="readSC" onclick="readSC()">Read Back</button>
+                            </div>
+                            <div style="display: inline-block">
+                                <table class="mtable" id="noise_scan_pars" style="vertical-align:top">
+                                    <tr><th colspan="2" class="mtableheader">Slow Control Variables</th></tr>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Value</th>
+                                    </tr>
+                                    <tr>
+                                        <td>Slow control data of chip</td>
+                                        <td><input type="text" id="slow_control_chip_number" value="0" onchange="slow_control_update_chip_number(event)"></div></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Monitoring tab -->
+
+                    <div class="tab">
+                        <input type="radio" name="css-tabs" id="tab-5" class="tab-switch">
+                        <label for="tab-5" class="tab-label">Monitoring</label>
+                        <div class="tab-content">
+                            <div style="display: inline-block; vertical-align:top;width:150px">
+                                <p><strong>Current test:</strong></p>
+
+                                <div class="modbvalue" data-odb-path="/PixelQC/Monitoring/CurrentTest" onchange="show_monitoring_histo(this.value)"></div>
+
+                                <div style="visibility:hidden; display:none" id="current_qc_score">
+                                    <p><strong>Current QC score:</strong></p>
+                                    <div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/QC/full_qc/C1/QC_score""></div>
+                                </div>
+                                <div style="visibility:hidden; display:none" id="current_limitations">
+                                    <p><strong>QC Limitations:</strong></p>
+                                    <div class="modbvalue" data-odb-path="/Equipment/PixelsCentral/QC/full_qc/C1/Limitations""></div>
+                                </div>
+                            </div>
+
+                            <div style="display: inline-block; vertical-align:top">
+                                <p><strong>Messages:</strong></p>
+                                <textarea id="monitoring_messages_area" overflow-y="scroll" resize="none" style="height: 200px;width: 500px;" readonly="true"></textarea>
+                            </div>
+
+                            <div style="display: inline-block; vertical-align:top">
+                                <div class="mplot" style="height: 360px;width: 700px; visibility:hidden; display:none" id="monitoring_plot_iv">
+                                {
+                                    "showMenuButtons": true,
+
+                                    "color": {
+                                    "background": "#FFFFFF",
+                                    "axis": "#808080",
+                                    "grid": "#D0D0D0",
+                                    "label": "#404040"
+                                    },
+
+                                    "title": {
+                                    "color": "#404040",
+                                    "backgroundColor": "#808080",
+                                    "textSize": 20,
+                                    "text": "IV curve"
+                                    },
+
+                                    "legend": {
+                                    "show": true,
+                                    "color": "#D0D0D0",
+                                    "backgroundColor": "#FFFFFF",
+                                    "textColor": "#404040",
+                                    "textSize": 16
+                                    },
+
+                                    "xAxis": {
+                                    "log": false,
+                                    "min": -10,
+                                    "max": 10,
+                                    "grid": true,
+                                    "textSize": 10,
+                                    "title": {
+                                        "text": "HV Voltage [V]",
+                                        "textSize" : 14
+                                    }
+                                    },
+
+                                    "yAxis": {
+                                    "log": false,
+                                    "min": -10,
+                                    "max": 10,
+                                    "grid": true,
+                                    "textSize": 10,
+                                    "title": {
+                                        "text": "Leakage Current [uA]",
+                                        "textSize" : 10
+                                    }
+                                    },
+
+                                    "plot": [
+                                    {
+                                        "type": "scatter",
+                                        "getFromODB": true,
+                                        "odbPath": "/Equipment/PixelsCentral/QC/iv_scan",
+                                        "x": "HV voltage",
+                                        "y": "HV current (µA)",
+                                        "label": "IV curve",
+                                        "marker": {
+                                            "draw": true,
+                                            "lineColor": 3,
+                                            "fillColor": 3,
+                                            "style": "cross",
+                                            "size": 10,
+                                            "lineWidth": 2
+                                        },
+
+                                        "line": {
+                                            "draw": true,
+                                            "fill": false,
+                                            "color": 0,
+                                            "style": "solid",
+                                            "width": 1
+                                        }
+                                    }
+                                    ]
+
+                                }
+                                </div>
+
+                                <div class="mplot" style="height: 360px;width: 700px; visibility:hidden; display:none" id="monitoring_plot_lv_power_on">
+                                    {
+                                        "showMenuButtons": true,
+
+                                        "color": {
+                                        "background": "#FFFFFF",
+                                        "axis": "#808080",
+                                        "grid": "#D0D0D0",
+                                        "label": "#404040"
+                                        },
+
+                                        "title": {
+                                        "color": "#404040",
+                                        "backgroundColor": "#808080",
+                                        "textSize": 20,
+                                        "text": "Power on Currents"
+                                        },
+
+                                        "legend": {
+                                        "show": true,
+                                        "color": "#D0D0D0",
+                                        "backgroundColor": "#FFFFFF",
+                                        "textColor": "#404040",
+                                        "textSize": 16
+                                        },
+
+                                        "xAxis": {
+                                        "log": false,
+                                        "min": -10,
+                                        "max": 10,
+                                        "grid": true,
+                                        "textSize": 10,
+                                        "title": {
+                                            "text": "Current (mA)",
+                                            "textSize" : 14
+                                        }
+                                        },
+
+                                        "yAxis": {
+                                        "log": false,
+                                        "min": -10,
+                                        "max": 10,
+                                        "grid": true,
+                                        "textSize": 10,
+                                        "title": {
+                                            "text": "#",
+                                            "textSize" : 10
+                                        }
+                                        },
+
+                                        "plot": [
+                                        {
+                                            "type": "histogram",
+                                            "getFromODB": true,
+                                            "odbPath": "/Equipment/PixelsCentral/QC/lv_power_on/0",
+                                            "x": "LV voltage",
+                                            "label": "LV Power On",
+                                            "marker": {
+                                                "draw": true,
+                                                "lineColor": 3,
+                                                "fillColor": 3,
+                                                "style": "cross",
+                                                "size": 10,
+                                                "lineWidth": 2
+                                            },
+
+                                            "line": {
+                                                "draw": false,
+                                                "fill": true,
+                                                "color": 0,
+                                                "style": "solid",
+                                                "width": 1
+                                            }
+                                        }
+                                        ]
+
+                                    }
+                                </div>
+
+                                <div class="mplot" style="height: 360px;width: 700px; visibility:hidden; display:none" id="monitoring_plot_vdac_scans">
+                                    {
+                                        "showMenuButtons": true,
+
+                                        "color": {
+                                        "background": "#FFFFFF",
+                                        "axis": "#808080",
+                                        "grid": "#D0D0D0",
+                                        "label": "#404040"
+                                        },
+
+                                        "title": {
+                                        "color": "#404040",
+                                        "backgroundColor": "#808080",
+                                        "textSize": 20,
+                                        "text": "VDAC scans"
+                                        },
+
+                                        "legend": {
+                                        "show": true,
+                                        "color": "#D0D0D0",
+                                        "backgroundColor": "#FFFFFF",
+                                        "textColor": "#404040",
+                                        "textSize": 16
+                                        },
+
+                                        "xAxis": {
+                                        "log": false,
+                                        "min": 0,
+                                        "max": 255,
+                                        "grid": true,
+                                        "textSize": 10,
+                                        "title": {
+                                            "text": "DAC Value",
+                                            "textSize" : 14
+                                        }
+                                        },
+
+                                        "yAxis": {
+                                        "log": false,
+                                        "min": 0,
+                                        "max": 1.8,
+                                        "grid": true,
+                                        "textSize": 10,
+                                        "title": {
+                                            "text": "Voltage (V)",
+                                            "textSize" : 10
+                                        }
+                                        },
+
+                                        "plot": [
+                                        {
+                                            "type": "scatter",
+                                            "getFromODB": true,
+                                            "odbPath": "/Equipment/PixelsCentral/QC/vdac_scans/C1",
+                                            "x": "VDAC_Baseline",
+                                            "y": "ADC_Baseline",
+                                            "label": "Baseline",
+                                            "marker": {
+                                                "draw": true,
+                                                "lineColor": 0,
+                                                "fillColor": 0,
+                                                "style": "cross",
+                                                "size": 10,
+                                                "lineWidth": 2
+                                            },
+                                            "line": {
+                                                "draw": true,
+                                                "fill": false,
+                                                "color": 0,
+                                                "style": "solid",
+                                                "width": 1
+                                            }
+                                        },
+                                        {
+                                            "type": "scatter",
+                                            "getFromODB": true,
+                                            "odbPath": "/Equipment/PixelsCentral/QC/vdac_scans/C1",
+                                            "x": "VDAC_ThHigh",
+                                            "y": "ADC_ThHigh",
+                                            "label": "ThHigh",
+                                            "marker": {
+                                                "draw": true,
+                                                "lineColor": 1,
+                                                "fillColor": 1,
+                                                "style": "cross",
+                                                "size": 10,
+                                                "lineWidth": 2
+                                            },
+                                            "line": {
+                                                "draw": true,
+                                                "fill": false,
+                                                "color": 1,
+                                                "style": "solid",
+                                                "width": 1
+                                            }
+                                        },
+                                        {
+                                            "type": "scatter",
+                                            "getFromODB": true,
+                                            "odbPath": "/Equipment/PixelsCentral/QC/vdac_scans/C1",
+                                            "x": "VDAC_ThLow",
+                                            "y": "ADC_ThLow",
+                                            "label": "ThLow",
+                                            "marker": {
+                                                "draw": true,
+                                                "lineColor": 2,
+                                                "fillColor": 2,
+                                                "style": "cross",
+                                                "size": 10,
+                                                "lineWidth": 2
+                                            },
+                                            "line": {
+                                                "draw": true,
+                                                "fill": false,
+                                                "color": 2,
+                                                "style": "solid",
+                                                "width": 1
+                                            }
+                                        }
+                                        ]
+
+                                    }
+                                </div>
+                                <div style="height: 1100px;width: 700px; visibility:hidden; display:none" id="monitoring_plot_vdac_power">
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_VPDAC">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 0,
+                                            "max": 40,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.4,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "VPDAC",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_BLPix">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 10,
+                                            "max": 150,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.3,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "BLPix",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_ref_Vss">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 20,
+                                            "max": 220,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.2,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "ref_Vss",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                </div>
+                                <div style="height: 1100px;width: 700px; visibility:hidden; display:none" id="monitoring_plot_vdac_power_US">
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_VPDAC_US">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 0,
+                                            "max": 40,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.4,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "C1",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C2",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "C2",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C3",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "C3",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_BLPix_US">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 10,
+                                            "max": 150,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.3,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "C1",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C2",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "C2",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C3",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "C3",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_ref_Vss_US">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 20,
+                                            "max": 220,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.2,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "C1",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C2",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "C2",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C3",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "C3",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                </div>
+                                <div style="height: 1100px;width: 700px; visibility:hidden; display:none" id="monitoring_plot_vdac_power_DS">
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_VPDAC_DS">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 0,
+                                            "max": 40,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.4,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C4",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "C4",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C5",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "C5",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C6",
+                                                "x": "VDAC_VPDAC",
+                                                "y": "lv_current/lv_current_meas_VPDAC",
+                                                "label": "C6",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_BLPix_DS">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 10,
+                                            "max": 150,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.3,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C4",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "C4",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C5",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "C5",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C6",
+                                                "x": "VDAC_BLPix",
+                                                "y": "lv_current/lv_current_meas_BLPix",
+                                                "label": "C6",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                    <div class="mplot" style="height: 360px;width: 700px;" id="monitoring_plot_ref_Vss_DS">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC power consumption"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 20,
+                                            "max": 220,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0.2,
+                                            "max": 0.6,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Current (A)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C4",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "C4",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C5",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "C5",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C6",
+                                                "x": "VDAC_ref_Vss",
+                                                "y": "lv_current/lv_current_meas_ref_Vss",
+                                                "label": "C6",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab">
+                        <input type="radio" name="css-tabs" id="tab-6" class="tab-switch">
+                        <label for="tab-6" class="tab-label">View Results</label>
+                        <div class="tab-content">
+                            <div style="display: inline-block; vertical-align:top">
+                                <h3>QC Results</h3>
+                                <div class="btn-group">
+                                    <button id="QCLoadJSON" onclick="loadQCJSON()">Load JSON file</button>
+                                </div>
+                            </div>
+                            <div style="display: inline-block; vertical-align:top">
+                                <h3>Select Chip</h3>
+                                <div style="display: inline-block; vertical-align:top">
+                                    <label for="view_pn">PN:</label>
+                                    <input style="display: inline-block; vertical-align:top; margin-right: 10px" type="text" value=0 id="view_pn">
+                                    <label for="view_lot">Lot:</label>
+                                    <input style="display: inline-block; vertical-align:top; margin-right: 10px" type="text" value=0 id="view_lot">
+                                    <label for="view_item">Item:</label>
+                                    <input style="display: inline-block; vertical-align:top; margin-right: 10px" type="text" value=0 id="view_item">
+                                    <div style="display: block;">
+                                        <p style="display: inline-block;"">Home folder:</p>
+                                        <div style="display: inline-block;" class="modbvalue" data-odb-path="/PixelQC/Setup/homeFolder" data-odb-editable="0" id="view_home_folder"></div>
+                                    </div>
+                                    <div style="display: block;" class="btn-group">
+                                        <button id="QCView" onclick="viewQC()">View Results</button>
+                                    </div>
+                                </div>
+                                <div id="view_not_found" style="display: block; visibility:hidden;">
+                                    <p><strong>Result not available</strong></p>
+                                </div>
+                                <div id="view_plots" style="display: inline-block; vertical-align:top; visibility:hidden; display:none">
+                                    <div style="display: block">
+                                        <div style="display: inline-block; margin-right: 10px">
+                                            <p style="display: block;"><strong>QC score:</strong></p>
+                                            <div style="display: block;" id="view_qc_score"></div>
+                                        </div>
+                                        <div style="display: inline-block; margin-right: 30px">
+                                            <p><strong>Limitations:</strong></p>
+                                            <div id="view_qc_limitations"></div>
+                                        </div>
+                                        <div style="display: inline-block;">
+                                            <p><strong>Failure:</strong></p>
+                                            <div id="view_qc_failure"></div>
+                                        </div>
+                                    </div>
+
+                                    <div id="view_check_contact">
+                                        <p><strong>Check contact result:</strong></p>
+                                        <div id="view_check_contact_details"></div>
+                                    </div>
+
+                                    <div class="mplot" style="height: 360px;width: 700px" id="view_plot_iv">
+                                    {
+                                        "showMenuButtons": true,
+
+                                        "color": {
+                                        "background": "#FFFFFF",
+                                        "axis": "#808080",
+                                        "grid": "#D0D0D0",
+                                        "label": "#404040"
+                                        },
+
+                                        "title": {
+                                        "color": "#404040",
+                                        "backgroundColor": "#808080",
+                                        "textSize": 20,
+                                        "text": "IV curve"
+                                        },
+
+                                        "legend": {
+                                        "show": true,
+                                        "color": "#D0D0D0",
+                                        "backgroundColor": "#FFFFFF",
+                                        "textColor": "#404040",
+                                        "textSize": 16
+                                        },
+
+                                        "xAxis": {
+                                        "log": false,
+                                        "min": -10,
+                                        "max": 10,
+                                        "grid": true,
+                                        "textSize": 10,
+                                        "title": {
+                                            "text": "HV Voltage [V]",
+                                            "textSize" : 14
+                                        }
+                                        },
+
+                                        "yAxis": {
+                                        "log": false,
+                                        "min": -10,
+                                        "max": 10,
+                                        "grid": true,
+                                        "textSize": 10,
+                                        "title": {
+                                            "text": "Leakage Current [uA]",
+                                            "textSize" : 10
+                                        }
+                                        },
+
+                                        "plot": [
+                                        {
+                                            "type": "scatter",
+                                            "getFromODB": false,
+                                            "odbPath": "/Equipment/PixelsCentral/QC/iv_scan",
+                                            "x": "HV voltage",
+                                            "y": "HV current (µA)",
+                                            "label": "IV curve",
+                                            "marker": {
+                                                "draw": true,
+                                                "lineColor": 3,
+                                                "fillColor": 3,
+                                                "style": "cross",
+                                                "size": 10,
+                                                "lineWidth": 2
+                                            },
+
+                                            "line": {
+                                                "draw": true,
+                                                "fill": false,
+                                                "color": 0,
+                                                "style": "solid",
+                                                "width": 1
+                                            }
+                                        }
+                                        ]
+
+                                    }
+                                    </div>
+
+                                    <div class="mplot" style="height: 360px;width: 700px" id="view_plot_vdac_scans">
+                                        {
+                                            "showMenuButtons": true,
+
+                                            "color": {
+                                            "background": "#FFFFFF",
+                                            "axis": "#808080",
+                                            "grid": "#D0D0D0",
+                                            "label": "#404040"
+                                            },
+
+                                            "title": {
+                                            "color": "#404040",
+                                            "backgroundColor": "#808080",
+                                            "textSize": 20,
+                                            "text": "VDAC scans"
+                                            },
+
+                                            "legend": {
+                                            "show": true,
+                                            "color": "#D0D0D0",
+                                            "backgroundColor": "#FFFFFF",
+                                            "textColor": "#404040",
+                                            "textSize": 16
+                                            },
+
+                                            "xAxis": {
+                                            "log": false,
+                                            "min": 0,
+                                            "max": 255,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "DAC Value",
+                                                "textSize" : 14
+                                            }
+                                            },
+
+                                            "yAxis": {
+                                            "log": false,
+                                            "min": 0,
+                                            "max": 1.8,
+                                            "grid": true,
+                                            "textSize": 10,
+                                            "title": {
+                                                "text": "Voltage (V)",
+                                                "textSize" : 10
+                                            }
+                                            },
+
+                                            "plot": [
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_scans/C1",
+                                                "x": "VDAC_Baseline",
+                                                "y": "ADC_Baseline",
+                                                "label": "Baseline",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 0,
+                                                    "fillColor": 0,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 0,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_scans/C1",
+                                                "x": "VDAC_ThHigh",
+                                                "y": "ADC_ThHigh",
+                                                "label": "ThHigh",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 1,
+                                                    "fillColor": 1,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 1,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "scatter",
+                                                "getFromODB": true,
+                                                "odbPath": "/Equipment/PixelsCentral/QC/vdac_scans/C1",
+                                                "x": "VDAC_ThLow",
+                                                "y": "ADC_ThLow",
+                                                "label": "ThLow",
+                                                "marker": {
+                                                    "draw": true,
+                                                    "lineColor": 2,
+                                                    "fillColor": 2,
+                                                    "style": "cross",
+                                                    "size": 10,
+                                                    "lineWidth": 2
+                                                },
+                                                "line": {
+                                                    "draw": true,
+                                                    "fill": false,
+                                                    "color": 2,
+                                                    "style": "solid",
+                                                    "width": 1
+                                                }
+                                            }
+                                            ]
+
+                                        }
+                                    </div>
+                                    <div style="height: 1100px;width: 700px" id="view_plot_vdac_power">
+                                        <div class="mplot" style="height: 360px;width: 700px;" id="view_plot_VPDAC">
+                                            {
+                                                "showMenuButtons": true,
+
+                                                "color": {
+                                                "background": "#FFFFFF",
+                                                "axis": "#808080",
+                                                "grid": "#D0D0D0",
+                                                "label": "#404040"
+                                                },
+
+                                                "title": {
+                                                "color": "#404040",
+                                                "backgroundColor": "#808080",
+                                                "textSize": 20,
+                                                "text": "VDAC power consumption"
+                                                },
+
+                                                "legend": {
+                                                "show": true,
+                                                "color": "#D0D0D0",
+                                                "backgroundColor": "#FFFFFF",
+                                                "textColor": "#404040",
+                                                "textSize": 16
+                                                },
+
+                                                "xAxis": {
+                                                "log": false,
+                                                "min": 0,
+                                                "max": 40,
+                                                "grid": true,
+                                                "textSize": 10,
+                                                "title": {
+                                                    "text": "DAC Value",
+                                                    "textSize" : 14
+                                                }
+                                                },
+
+                                                "yAxis": {
+                                                "log": false,
+                                                "min": 0.4,
+                                                "max": 0.6,
+                                                "grid": true,
+                                                "textSize": 10,
+                                                "title": {
+                                                    "text": "Current (A)",
+                                                    "textSize" : 10
+                                                }
+                                                },
+
+                                                "plot": [
+                                                {
+                                                    "type": "scatter",
+                                                    "getFromODB": true,
+                                                    "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                    "x": "VDAC_VPDAC",
+                                                    "y": "lv_current/lv_current_meas_VPDAC",
+                                                    "label": "VPDAC",
+                                                    "marker": {
+                                                        "draw": true,
+                                                        "lineColor": 0,
+                                                        "fillColor": 0,
+                                                        "style": "cross",
+                                                        "size": 10,
+                                                        "lineWidth": 2
+                                                    },
+                                                    "line": {
+                                                        "draw": true,
+                                                        "fill": false,
+                                                        "color": 0,
+                                                        "style": "solid",
+                                                        "width": 1
+                                                    }
+                                                }
+                                                ]
+                                            }
+                                        </div>
+                                        <div class="mplot" style="height: 360px;width: 700px;" id="view_plot_BLPix">
+                                            {
+                                                "showMenuButtons": true,
+
+                                                "color": {
+                                                "background": "#FFFFFF",
+                                                "axis": "#808080",
+                                                "grid": "#D0D0D0",
+                                                "label": "#404040"
+                                                },
+
+                                                "title": {
+                                                "color": "#404040",
+                                                "backgroundColor": "#808080",
+                                                "textSize": 20,
+                                                "text": "VDAC power consumption"
+                                                },
+
+                                                "legend": {
+                                                "show": true,
+                                                "color": "#D0D0D0",
+                                                "backgroundColor": "#FFFFFF",
+                                                "textColor": "#404040",
+                                                "textSize": 16
+                                                },
+
+                                                "xAxis": {
+                                                "log": false,
+                                                "min": 10,
+                                                "max": 150,
+                                                "grid": true,
+                                                "textSize": 10,
+                                                "title": {
+                                                    "text": "DAC Value",
+                                                    "textSize" : 14
+                                                }
+                                                },
+
+                                                "yAxis": {
+                                                "log": false,
+                                                "min": 0.3,
+                                                "max": 0.6,
+                                                "grid": true,
+                                                "textSize": 10,
+                                                "title": {
+                                                    "text": "Current (A)",
+                                                    "textSize" : 10
+                                                }
+                                                },
+
+                                                "plot": [
+                                                {
+                                                    "type": "scatter",
+                                                    "getFromODB": true,
+                                                    "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                    "x": "VDAC_BLPix",
+                                                    "y": "lv_current/lv_current_meas_BLPix",
+                                                    "label": "BLPix",
+                                                    "marker": {
+                                                        "draw": true,
+                                                        "lineColor": 1,
+                                                        "fillColor": 1,
+                                                        "style": "cross",
+                                                        "size": 10,
+                                                        "lineWidth": 2
+                                                    },
+                                                    "line": {
+                                                        "draw": true,
+                                                        "fill": false,
+                                                        "color": 1,
+                                                        "style": "solid",
+                                                        "width": 1
+                                                    }
+                                                }
+                                                ]
+                                            }
+                                        </div>
+                                        <div class="mplot" style="height: 360px;width: 700px;" id="view_plot_ref_Vss">
+                                            {
+                                                "showMenuButtons": true,
+
+                                                "color": {
+                                                "background": "#FFFFFF",
+                                                "axis": "#808080",
+                                                "grid": "#D0D0D0",
+                                                "label": "#404040"
+                                                },
+
+                                                "title": {
+                                                "color": "#404040",
+                                                "backgroundColor": "#808080",
+                                                "textSize": 20,
+                                                "text": "VDAC power consumption"
+                                                },
+
+                                                "legend": {
+                                                "show": true,
+                                                "color": "#D0D0D0",
+                                                "backgroundColor": "#FFFFFF",
+                                                "textColor": "#404040",
+                                                "textSize": 16
+                                                },
+
+                                                "xAxis": {
+                                                "log": false,
+                                                "min": 20,
+                                                "max": 220,
+                                                "grid": true,
+                                                "textSize": 10,
+                                                "title": {
+                                                    "text": "DAC Value",
+                                                    "textSize" : 14
+                                                }
+                                                },
+
+                                                "yAxis": {
+                                                "log": false,
+                                                "min": 0.2,
+                                                "max": 0.6,
+                                                "grid": true,
+                                                "textSize": 10,
+                                                "title": {
+                                                    "text": "Current (A)",
+                                                    "textSize" : 10
+                                                }
+                                                },
+
+                                                "plot": [
+                                                {
+                                                    "type": "scatter",
+                                                    "getFromODB": true,
+                                                    "odbPath": "/Equipment/PixelsCentral/QC/vdac_power_consumption/C1",
+                                                    "x": "VDAC_ref_Vss",
+                                                    "y": "lv_current/lv_current_meas_ref_Vss",
+                                                    "label": "ref_Vss",
+                                                    "marker": {
+                                                        "draw": true,
+                                                        "lineColor": 2,
+                                                        "fillColor": 2,
+                                                        "style": "cross",
+                                                        "size": 10,
+                                                        "lineWidth": 2
+                                                    },
+                                                    "line": {
+                                                        "draw": true,
+                                                        "fill": false,
+                                                        "color": 2,
+                                                        "style": "solid",
+                                                        "width": 1
+                                                    }
+                                                }
+                                                ]
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-bottom">
+                    <h2>Test instructions</h2>
+                </div>
+            </div>
+        <!--<div id="status">
+        <div style="display: none;" id="autotest_IV" class="modbvalue" data-odb-path="/Equipment/Mupix/Settings/AutomaticTests/IV"></div>
+        <div id="status_report">Nothing</div>-->
+        </div>
+
+        </div>
+        <script src="PixelQC/color_maps.js"></script>
+        <script src="PixelQC/GlobalConfig.js"></script>
+        <script src="PixelQC/LocalConfig.js"></script>
+        <script src="PixelQC/Links_mapping.js"></script>
+        <script src="PixelQC/SingleChipQC.js"></script>
+        <script src="PixelQC/QCExtraComment.js"></script>
+        <script src="PixelQC/DUTGeometry.js"></script>
+        <script src="PixelQC/LVDSlinks.js"></script>
+    </body>
+</html>
