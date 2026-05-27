@@ -7,7 +7,7 @@ This repository contains selected code that I developed during my position as a 
 - **`Pixel/`**  
   Python and C++ code for pixel-related tasks, including charge injection procedures and automated S-curve studies built upon them.
 
-- **`ChipQC/`** and **`DQM/`**  
+- **`DQM/`**  
   HTML and JavaScript code for readout and quality-control web interfaces.
 
 ## Scope and Limitations
